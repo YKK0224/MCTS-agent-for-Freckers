@@ -3,7 +3,8 @@
 
 from referee.game import PlayerColor, Coord, Direction, \
     Action, MoveAction, GrowAction
-    
+from referee.game.exceptions import IllegalActionException
+from .MCTS import GameState, MCTS
 
 class Agent:
     """
@@ -17,6 +18,7 @@ class Agent:
         Any setup and/or precomputation should be done here.
         """
         self._color = color
+        self.board = None
         match color:
             case PlayerColor.RED:
                 print("Testing: I am playing as RED")
@@ -28,22 +30,16 @@ class Agent:
         This method is called by the referee each time it is the agent's turn
         to take an action. It must always return an action object. 
         """
+        if self.board is None:
+            from referee.game.board import Board
+            self._board = Board()
 
-        # Below we have hardcoded two actions to be played depending on whether
-        # the agent is playing as BLUE or RED. Obviously this won't work beyond
-        # the initial moves of the game, so you should use some game playing
-        # technique(s) to determine the best action to take.
-        match self._color:
-            case PlayerColor.RED:
-                print("Testing: RED is playing a MOVE action")
-                return MoveAction(
-                    Coord(0, 3),
-                    [Direction.Down]
-                )
-            case PlayerColor.BLUE:
-                print("Testing: BLUE is playing a GROW action")
-                return GrowAction()
-
+        curr_state = GameState(last_move=None, board=self._board)
+        
+        mcts = MCTS(curr_state)
+        best = mcts.search(iteration=3000)
+        return best
+    
     def update(self, color: PlayerColor, action: Action, **referee: dict):
         """
         This method is called by the referee after a player has taken their
