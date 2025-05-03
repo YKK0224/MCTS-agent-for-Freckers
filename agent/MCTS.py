@@ -24,7 +24,7 @@ class Node:
         self.num_visit = 0                      #Number of visits of a node
         self.possible_moves = state.get_moves() #possible moves that have not tried
     
-    def select(self):
+    def select_child(self):
         C = math.sqrt(2)
         if self.state.board.turn_color == PlayerColor.RED:
             current_player = 0                  #current player is red frog
@@ -65,7 +65,7 @@ class Node:
 class MCTS:
     def __init__(self, state):
         self.root = Node(state)
-        self.depth = 30
+        self.depth = 30             #depth of simulation
         
     def search(self, iteration = 3000):
         for i in range(iteration):
@@ -74,7 +74,7 @@ class MCTS:
             self.back_prop(node, utility)
 
             #print(i + 1, "round complete")
-        #可修改不使用max和lambda
+        #可修改不使用max和lambda,或者返回ucb最高的节点
         return max(self.root.children, key=lambda c: c.num_visit).state.last_move
     
     def select(self):
@@ -83,7 +83,7 @@ class MCTS:
             if curr.possible_moves:
                 return curr.expand()
             else:
-                curr = curr.select()
+                curr = curr.select_child()
         return curr
     
     
@@ -98,7 +98,7 @@ class MCTS:
             move = random.choice(list(possible_moves))
             curr_state = curr_state.move(move)
             self.depth -= 1
-        return curr_state.get_reward()
+        return curr_state.get_utility()
     
     def back_prop(self, node, utility):
         while node:
@@ -110,9 +110,10 @@ class GameState:
     def __init__(self, last_move, board):
         self.last_move = last_move
         self.board = board
-        
+    
+    #Find all the possible moves of a current frog
     def get_moves(self):
-        
+        #Directions allowed for red frog
         red_dir = [
             Direction.Down,
             Direction.DownLeft,
@@ -120,7 +121,7 @@ class GameState:
             Direction.Left,
             Direction.Right,
         ]
-        
+        #Directions allowed for blue frog
         blue_dir = [
             Direction.Up,
             Direction.UpLeft,
@@ -128,7 +129,7 @@ class GameState:
             Direction.Left,
             Direction.Right,
         ]
-        #可能还有左和右
+        #All the possible directions, can be used to generate lilipads
         all_dir = [
             Direction.Down,
             Direction.DownLeft,
@@ -136,13 +137,17 @@ class GameState:
             Direction.Up,
             Direction.UpLeft,
             Direction.UpRight,
+            Direction.Right,
+            Direction.Left,
         ]
         
-        visited = set()
-        grow_pads = set()
-        moves = defaultdict(set)
+        grow_pads = set()               #Collect the coordinates for growing a lilypad
+        moves = defaultdict(set)        #A dictionary that has weight of moves as key, and corresponding moves as value
+        
+        #Function that evaluates the weight of a move
         def evaluate(move):
-            score = 1
+            #The weight for grow action is 1
+            weight = 1
             if isinstance(move, MoveAction):
                 start_coord = move.coord
                 end_coord = move.coord
@@ -150,47 +155,53 @@ class GameState:
                 
                 for d in dirs:
                     end_coord += d
-                    
-                score = abs(end_coord.r - start_coord.r)    #垂直距离评估，可以考虑别的
-            moves[score].add(move)
+                #Determine the weight of move by calculating vertical distance
+                weight = abs(end_coord.r - start_coord.r)    #垂直距离评估，可以考虑别的
+            moves[weight].add(move)
                 
                 
         #Implement an single move
         def simple_move(coord, dirs):
+
             for d in dirs:
                 #Ingnore the case that move to out of bound
                 try:
-                    next_coord = coord + d
-                    if self.board[next_coord].state == "LilyPad":
+                    nxt = coord + d
+                    if self.board[nxt].state == "LilyPad":
                         move = MoveAction(coord, (d,))
                         evaluate(move)
                 except ValueError:
                     continue
-                
+        #Track all the visited coordinate for dfs
+        visited = set()
         #Implement jump moves
         def chain_jump(curr_coord, dirs, path: list[Direction]):
+            #Ignore the case that current coordinate does not have the desired frog
             if self.board[curr_coord].state != self.board.turn_color:
                 return
+            #Record and evaluate each move
             if path:
                 move = MoveAction(curr_coord, tuple(path.copy()))
                 evaluate(move)
             
             for d in dirs:
                 try:
-                    
-                    mid_coord = curr_coord + d
-                    final_coord = mid_coord + d
+                    #Find the middle coordinate and final coordinate
+                    mid = curr_coord + d
+                    fin = mid + d
                     #可改
-                    if self.board[mid_coord].state in (PlayerColor.BLUE, PlayerColor.RED) and self.board[final_coord].state == "LilyPad":
+                    if self.board[mid].state in (PlayerColor.BLUE, PlayerColor.RED) and self.board[fin].state == "LilyPad":
                         new_path = path + [d]
-                        if final_coord not in visited:
-                            visited.add(final_coord)
-                            chain_jump(final_coord, dirs, new_path)
-                            visited.remove(final_coord)
+                        #Using dfs to find chain jumps
+                        if fin not in visited:
+                            visited.add(fin)
+                            chain_jump(fin, dirs, new_path)
+                            visited.remove(fin)
                             
                 except ValueError:
-                    continue
-                
+                    continue 
+
+        #可改逻辑
         def grow(coord):
             for d in all_dir:
                 try:
@@ -202,9 +213,9 @@ class GameState:
                     continue
                 
             if grow_pads:
-                move = GrowAction()
-                evaluate(move)
-                
+                #move = GrowAction()
+                evaluate(GrowAction())
+        '''       
         if self.board.turn_color == PlayerColor.RED:
             red_coords = []
             #简化
@@ -215,6 +226,7 @@ class GameState:
             for coord in red_coords:
                 simple_move(coord, red_dir)
                 chain_jump(coord, red_dir, [])
+                #chain_jump(coord, coord, red_dir, [])
                 grow(coord)
         elif self.board.turn_color == PlayerColor.BLUE:
             blue_coords = []
@@ -222,17 +234,47 @@ class GameState:
             for Coord, CellState in self.board._state.items():
                 if CellState.state == PlayerColor.BLUE:
                     blue_coords.append(Coord)
+                    
             for coord in blue_coords:
                 simple_move(coord, blue_dir)
                 chain_jump(coord, blue_dir, [])
+                #chain_jump(coord, coord, blue_dir, [])
                 grow(coord)
-                
+                '''
+        match self.board.turn_color:
+            case PlayerColor.RED:
+                red_coords = []
+                #简化
+                for Coord, CellState in self.board._state.items():
+                    if CellState.state == PlayerColor.RED:
+                        red_coords.append(Coord)
+                    
+                for coord in red_coords:
+                    simple_move(coord, red_dir)
+                    chain_jump(coord, red_dir, [])
+                    #chain_jump(coord, coord, red_dir, [])
+                    grow(coord)
+            case PlayerColor.BLUE:
+                blue_coords = []
+                #简化
+                for Coord, CellState in self.board._state.items():
+                    if CellState.state == PlayerColor.BLUE:
+                        blue_coords.append(Coord)
+                    
+                for coord in blue_coords:
+                    simple_move(coord, blue_dir)
+                    chain_jump(coord, blue_dir, [])
+                    #chain_jump(coord, coord, blue_dir, [])
+                    grow(coord)
+
         if moves:
             best_move = moves[max(moves)]
         else:
             best_move = None
             
         return best_move
+    
+    #Apply moves to update the board
     def move(self, action):
         new_board = deepcopy(self.board)
         #可以修改
@@ -246,8 +288,10 @@ class GameState:
         return self.board.game_over
     
     #可修改
-    def get_reward(self):
+    #Find the utility of a current state
+    def get_utility(self):
         #需要补充comment和改名字
+        #Use a heuristic to evaluate utility in the case that game is not ended
         def heuristic():
             red_progress = self.board._row_count(PlayerColor.RED, BOARD_N - 1) / (BOARD_N - 2)
             blue_progress = self.board._row_count(PlayerColor.BLUE, 0) / (BOARD_N - 2)
@@ -258,20 +302,21 @@ class GameState:
             return score
             
         if self.is_terminal():
+            #Find end game utility
             red_score = self.board._player_score(PlayerColor.RED)
             blue_score = self.board._player_score(PlayerColor.BLUE)
             
             if self.board.turn_color == PlayerColor.RED:
                 if red_score > blue_score:
                     return 1.0
-                elif blue_score > red_score:
+                elif red_score < blue_score:
                     return -1.0
                 else:
                     return 0
-            else:
+            elif self.board.turn_color == PlayerColor.BLUE:
                 if blue_score > red_score:
                     return 1.0
-                elif red_score > blue_score:
+                elif blue_score < red_score:
                     return -1.0
                 else:
                     return 0

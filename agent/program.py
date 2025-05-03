@@ -4,6 +4,7 @@
 from referee.game import PlayerColor, Coord, Direction, \
     Action, MoveAction, GrowAction
 from referee.game.exceptions import IllegalActionException
+from referee.game.board import Board
 from .MCTS import GameState, MCTS
 
 class Agent:
@@ -31,7 +32,7 @@ class Agent:
         to take an action. It must always return an action object. 
         """
         if self.board is None:
-            from referee.game.board import Board
+            #from referee.game.board import Board
             self._board = Board()
 
         curr_state = GameState(last_move=None, board=self._board)
@@ -45,11 +46,12 @@ class Agent:
         This method is called by the referee after a player has taken their
         turn. You should use it to update the agent's internal game state. 
         """
-
-        # There are two possible action types: MOVE and GROW. Below we check
-        # which type of action was played and print out the details of the
-        # action for demonstration purposes. You should replace this with your
-        # own logic to update your agent's internal game state representation.
+        if self.board is None:
+            self._board = Board()
+        try:
+            self._board.apply_action(action)
+        except IllegalActionException as e:
+            print(f"IllegalMove: {e}")
         match action:
             case MoveAction(coord, dirs):
                 dirs_text = ", ".join([str(dir) for dir in dirs])
