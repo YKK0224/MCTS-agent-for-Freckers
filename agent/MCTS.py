@@ -110,7 +110,7 @@ class GameState:
     def __init__(self, last_move, board):
         self.last_move = last_move
         self.board = board
-    
+
     #Find all the possible moves of a current frog
     def get_moves(self):
         #Directions allowed for red frog
@@ -215,7 +215,7 @@ class GameState:
             if grow_pads:
                 #move = GrowAction()
                 evaluate(GrowAction())
-        '''       
+          
         if self.board.turn_color == PlayerColor.RED:
             red_coords = []
             #简化
@@ -240,32 +240,6 @@ class GameState:
                 chain_jump(coord, blue_dir, [])
                 #chain_jump(coord, coord, blue_dir, [])
                 grow(coord)
-                '''
-        match self.board.turn_color:
-            case PlayerColor.RED:
-                red_coords = []
-                #简化
-                for Coord, CellState in self.board._state.items():
-                    if CellState.state == PlayerColor.RED:
-                        red_coords.append(Coord)
-                    
-                for coord in red_coords:
-                    simple_move(coord, red_dir)
-                    chain_jump(coord, red_dir, [])
-                    #chain_jump(coord, coord, red_dir, [])
-                    grow(coord)
-            case PlayerColor.BLUE:
-                blue_coords = []
-                #简化
-                for Coord, CellState in self.board._state.items():
-                    if CellState.state == PlayerColor.BLUE:
-                        blue_coords.append(Coord)
-                    
-                for coord in blue_coords:
-                    simple_move(coord, blue_dir)
-                    chain_jump(coord, blue_dir, [])
-                    #chain_jump(coord, coord, blue_dir, [])
-                    grow(coord)
 
         if moves:
             best_move = moves[max(moves)]
@@ -273,7 +247,7 @@ class GameState:
             best_move = None
             
         return best_move
-    
+
     #Apply moves to update the board
     def move(self, action):
         new_board = deepcopy(self.board)

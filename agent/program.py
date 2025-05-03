@@ -19,7 +19,7 @@ class Agent:
         Any setup and/or precomputation should be done here.
         """
         self._color = color
-        self.board = None
+        self._board = None
         match color:
             case PlayerColor.RED:
                 print("Testing: I am playing as RED")
@@ -31,7 +31,7 @@ class Agent:
         This method is called by the referee each time it is the agent's turn
         to take an action. It must always return an action object. 
         """
-        if self.board is None:
+        if self._board is None:
             #from referee.game.board import Board
             self._board = Board()
 
@@ -46,7 +46,7 @@ class Agent:
         This method is called by the referee after a player has taken their
         turn. You should use it to update the agent's internal game state. 
         """
-        if self.board is None:
+        if self._board is None:
             self._board = Board()
         try:
             self._board.apply_action(action)
