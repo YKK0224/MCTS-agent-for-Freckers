@@ -19,7 +19,7 @@ class Agent:
         Any setup and/or precomputation should be done here.
         """
         self._color = color
-        self._board = None
+        self._board = Board()
         match color:
             case PlayerColor.RED:
                 print("Testing: I am playing as RED")
@@ -31,14 +31,16 @@ class Agent:
         This method is called by the referee each time it is the agent's turn
         to take an action. It must always return an action object. 
         """
+        '''
         if self._board is None:
             #from referee.game.board import Board
             self._board = Board()
-
+        '''
+        
         curr_state = GameState(last_move=None, board=self._board)
         
         mcts = MCTS(curr_state)
-        best = mcts.search(iteration=3000)
+        best = mcts.search(iteration=500)
         return best
     
     def update(self, color: PlayerColor, action: Action, **referee: dict):
@@ -46,12 +48,14 @@ class Agent:
         This method is called by the referee after a player has taken their
         turn. You should use it to update the agent's internal game state. 
         """
+        '''
         if self._board is None:
             self._board = Board()
+        '''
         try:
             self._board.apply_action(action)
-        except IllegalActionException as e:
-            print(f"IllegalMove: {e}")
+        except IllegalActionException:
+            pass
         match action:
             case MoveAction(coord, dirs):
                 dirs_text = ", ".join([str(dir) for dir in dirs])

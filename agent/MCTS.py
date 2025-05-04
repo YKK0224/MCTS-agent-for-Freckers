@@ -40,8 +40,16 @@ class Node:
             exploit = child.total_utility[current_player] / child.num_visit
             explore = C * math.sqrt(math.log(self.num_visit) / child.num_visit)
             return exploit + explore
+        
         #Select the child that has the highest UCB
-        return max(self.children, key=UCB)  #可以修改，不使用max
+        best = None
+        best_score = -float('inf')
+        for child in self.children:
+            score = UCB(child)
+            if score > best_score:
+                best_score = score
+                best = child
+        return best  #可以修改，不使用max
     
     #Expand a new node
     def expand(self):
@@ -61,51 +69,7 @@ class Node:
         else:
             self.total_utility[1] += utility
             self.total_utility[0] -= utility
-        
-class MCTS:
-    def __init__(self, state):
-        self.root = Node(state)
-        self.depth = 30             #depth of simulation
-        
-    def search(self, iteration = 3000):
-        for i in range(iteration):
-            node = self.select()
-            utility = self.simulate(node)
-            self.back_prop(node, utility)
-
-            #print(i + 1, "round complete")
-        #可修改不使用max和lambda,或者返回ucb最高的节点
-        return max(self.root.children, key=lambda c: c.num_visit).state.last_move
-    
-    def select(self):
-        curr = self.root
-        while not curr.state.is_terminal():
-            if curr.possible_moves:
-                return curr.expand()
-            else:
-                curr = curr.select_child()
-        return curr
-    
-    
-    def simulate(self, node):
-        #可修改
-        curr_state = deepcopy(node.state)
-        
-        while not curr_state.is_terminal() and self.depth > 0:
-            possible_moves = curr_state.get_moves()
-            if not possible_moves:
-                break
-            move = random.choice(list(possible_moves))
-            curr_state = curr_state.move(move)
-            self.depth -= 1
-        return curr_state.get_utility()
-    
-    def back_prop(self, node, utility):
-        while node:
-            node.update_utility(utility)
-            node = node.parent
-        
-    
+   
 class GameState:
     def __init__(self, last_move, board):
         self.last_move = last_move
@@ -189,8 +153,8 @@ class GameState:
                     #Find the middle coordinate and final coordinate
                     mid = curr_coord + d
                     fin = mid + d
-                    #可改
-                    if self.board[mid].state in (PlayerColor.BLUE, PlayerColor.RED) and self.board[fin].state == "LilyPad":
+                    
+                    if (self.board[mid].state == PlayerColor.BLUE or self.board[mid].state == PlayerColor.RED) and self.board[fin].state == "LilyPad":
                         new_path = path + [d]
                         #Using dfs to find chain jumps
                         if fin not in visited:
@@ -213,7 +177,6 @@ class GameState:
                     continue
                 
             if grow_pads:
-                #move = GrowAction()
                 evaluate(GrowAction())
           
         if self.board.turn_color == PlayerColor.RED:
@@ -226,7 +189,6 @@ class GameState:
             for coord in red_coords:
                 simple_move(coord, red_dir)
                 chain_jump(coord, red_dir, [])
-                #chain_jump(coord, coord, red_dir, [])
                 grow(coord)
         elif self.board.turn_color == PlayerColor.BLUE:
             blue_coords = []
@@ -238,7 +200,6 @@ class GameState:
             for coord in blue_coords:
                 simple_move(coord, blue_dir)
                 chain_jump(coord, blue_dir, [])
-                #chain_jump(coord, coord, blue_dir, [])
                 grow(coord)
 
         if moves:
@@ -254,8 +215,8 @@ class GameState:
         #可以修改
         try:
             mutation = new_board.apply_action(action)
-        except IllegalActionException as e:
-            raise ValueError(f"Illegal Action: {e}")
+        except IllegalActionException:
+            pass
         return GameState(last_move=action, board=new_board)
     
     def is_terminal(self):
@@ -264,18 +225,20 @@ class GameState:
     #可修改
     #Find the utility of a current state
     def get_utility(self):
-        #需要补充comment和改名字
-        #Use a heuristic to evaluate utility in the case that game is not ended
+        #Use a heuristic to evaluate utility for non-terminal position
         def heuristic():
+            #Count the number of frog on goal state, and divided by the number of frog to normalise the value
             red_progress = self.board._row_count(PlayerColor.RED, BOARD_N - 1) / (BOARD_N - 2)
             blue_progress = self.board._row_count(PlayerColor.BLUE, 0) / (BOARD_N - 2)
+            
             score = red_progress - blue_progress
             
+            #Invert the sign when blue, so higher is always better.
             if self.board.turn_color == PlayerColor.BLUE:
                 score *= -1
             return score
             
-        if self.is_terminal():
+        if self.is_terminal:
             #Find end game utility
             red_score = self.board._player_score(PlayerColor.RED)
             blue_score = self.board._player_score(PlayerColor.BLUE)
@@ -297,6 +260,55 @@ class GameState:
                 
         else:
             return heuristic()
+        
+        
+class MCTS:
+    def __init__(self, state):
+        self.root = Node(state)
+        self.depth = 30             #depth of simulation
+        
+    def search(self, iteration = 500):
+        for i in range(iteration):
+            child = self.select()
+            utility = self.simulate(child)
+            self.back_prop(child, utility)
+        best_child = None
+        best_visit = -1
+        #Find the child with highest mean utility
+        for child in self.root.children:
+            if child.num_visit > best_visit:
+                best_visit = child.num_visit
+                best_child = child
+        return best_child.state.last_move
+    
+    def select(self):
+        curr = self.root
+        while not curr.state.is_terminal():
+            if curr.possible_moves:
+                return curr.expand()
+            else:
+                curr = curr.select_child()
+        return curr
+    
+    
+    def simulate(self, node):
+        #可修改
+        curr_state = deepcopy(node.state)
+        while not curr_state.is_terminal() and self.depth > 0:
+            possible_moves = curr_state.get_moves()
+            if not possible_moves:
+                break
+            move = random.choice(list(possible_moves))
+            curr_state = curr_state.move(move)
+            self.depth -= 1
+        return curr_state.get_utility()
+    
+    def back_prop(self, node, utility):
+        while node:
+            node.update_utility(utility)
+            node = node.parent
+        
+ 
         
 if __name__ == "__main__":
     board = Board()
