@@ -4,11 +4,12 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 import math
+from typing import List
 from referee.game.player import PlayerColor
 from referee.game import board
 from referee.game.board import Board
-from referee.game.coord import Coord, Direction
-from referee.game.actions import Action, MoveAction, GrowAction
+from referee.game.coord import Direction
+from referee.game.actions import MoveAction, GrowAction, Action
 from referee.game.exceptions import IllegalActionException
 from referee.game.constants import *
 import random
@@ -22,7 +23,7 @@ class Node:
         self.children = []                      #children nodes
         self.total_utility = [0.0, 0.0]         #Utility, left fot red and right for blue
         self.num_visit = 0                      #Number of visits of a node
-        self.possible_moves = state.get_moves() #possible moves that have not tried
+        self.moves = state.get_moves()          #possible moves that have not tried
     
     def select_child(self):
         C = math.sqrt(2)
@@ -54,7 +55,7 @@ class Node:
     #Expand a new node
     def expand(self):
         #Find a leagal move and move to that node
-        move = self.possible_moves.pop()
+        move = self.moves.pop()
         next_state = self.state.move(move)
         child = Node(next_state, parent=self)
         self.children.append(child)
@@ -78,37 +79,21 @@ class GameState:
     #Find all the possible moves of a current frog
     def get_moves(self):
         #Directions allowed for red frog
-        red_dir = [
-            Direction.Down,
-            Direction.DownLeft,
-            Direction.DownRight,
-            Direction.Left,
-            Direction.Right,
-        ]
+        red_dir = [Direction.Down, Direction.DownLeft, Direction.DownRight, 
+                        Direction.Left, Direction.Right]
         #Directions allowed for blue frog
-        blue_dir = [
-            Direction.Up,
-            Direction.UpLeft,
-            Direction.UpRight,
-            Direction.Left,
-            Direction.Right,
-        ]
+        blue_dir = [Direction.Up,   Direction.UpLeft,   Direction.UpRight,
+                        Direction.Left, Direction.Right]
         #All the possible directions, can be used to generate lilipads
-        all_dir = [
-            Direction.Down,
-            Direction.DownLeft,
-            Direction.DownRight,
-            Direction.Up,
-            Direction.UpLeft,
-            Direction.UpRight,
-            Direction.Right,
-            Direction.Left,
-        ]
+        all_dir = [Direction.Up, Direction.UpLeft, Direction.UpRight,
+                        Direction.Down, Direction.DownLeft, Direction.DownRight,
+                        Direction.Left, Direction.Right]
         
         grow_pads = set()               #Collect the coordinates for growing a lilypad
         moves = defaultdict(set)        #A dictionary that has weight of moves as key, and corresponding moves as value
         
-        #Function that evaluates the weight of a move
+        #Function that evaluates the weight of a move, and add to a dictionary
+        #Dictionary is used to find the move with highest weight, and thus pruning the move that has low weight
         def evaluate(move):
             #The weight for grow action is 1
             weight = 1
@@ -119,14 +104,13 @@ class GameState:
                 
                 for d in dirs:
                     end_coord += d
-                #Determine the weight of move by calculating vertical distance
-                weight = abs(end_coord.r - start_coord.r)    #垂直距离评估，可以考虑别的
+                #Determine the weight of move action by calculating vertical distance
+                weight = abs(end_coord.r - start_coord.r)
+                
             moves[weight].add(move)
-                
-                
+                 
         #Implement an single move
         def simple_move(coord, dirs):
-
             for d in dirs:
                 #Ingnore the case that move to out of bound
                 try:
@@ -167,6 +151,7 @@ class GameState:
 
         #可改逻辑
         def grow(coord):
+            #Checking surrounding positions to make sure that lily pad can be grown
             for d in all_dir:
                 try:
                     next_coord = coord + d
@@ -175,24 +160,27 @@ class GameState:
                     
                 except ValueError:
                     continue
-                
+            #If there are valid positions to grow, add the grow action to dict   
             if grow_pads:
                 evaluate(GrowAction())
-          
+                
+        #Red's turn 
         if self.board.turn_color == PlayerColor.RED:
+            #List for recording red frog coordinates
             red_coords = []
-            #简化
+            
             for Coord, CellState in self.board._state.items():
                 if CellState.state == PlayerColor.RED:
                     red_coords.append(Coord)
-                    
+            #For each red frog, evaluate three moves, and add the weight to dict     
             for coord in red_coords:
                 simple_move(coord, red_dir)
                 chain_jump(coord, red_dir, [])
                 grow(coord)
+        #Blue's turn
         elif self.board.turn_color == PlayerColor.BLUE:
             blue_coords = []
-            #简化
+ 
             for Coord, CellState in self.board._state.items():
                 if CellState.state == PlayerColor.BLUE:
                     blue_coords.append(Coord)
@@ -201,14 +189,13 @@ class GameState:
                 simple_move(coord, blue_dir)
                 chain_jump(coord, blue_dir, [])
                 grow(coord)
-
+                
         if moves:
             best_move = moves[max(moves)]
         else:
             best_move = None
-            
         return best_move
-
+    
     #Apply moves to update the board
     def move(self, action):
         new_board = deepcopy(self.board)
@@ -267,42 +254,51 @@ class MCTS:
         self.root = Node(state)
         self.depth = 30             #depth of simulation
         
-    def search(self, iteration = 500):
+    #A function that do the MCTS search
+    def search(self, iteration):
         for i in range(iteration):
+            #Select a child node to expand
             child = self.select()
+            #Simulate and back propagate the utility to the tree
             utility = self.simulate(child)
             self.back_prop(child, utility)
+            
         best_child = None
         best_visit = -1
-        #Find the child with highest mean utility
+        #Loop through all the child nodes, find the one with highest number of visits
+        #and return its associated move
         for child in self.root.children:
             if child.num_visit > best_visit:
                 best_visit = child.num_visit
                 best_child = child
         return best_child.state.last_move
     
+    # A function that selects a child node to expand
     def select(self):
         curr = self.root
         while not curr.state.is_terminal():
-            if curr.possible_moves:
+            #If there are still moves can go, expand current node
+            if curr.moves:
                 return curr.expand()
+            #If no more moves can go, seelct the child with highest UCB
             else:
                 curr = curr.select_child()
         return curr
     
-    
+    #A function that do a random move and finds the utility
     def simulate(self, node):
         #可修改
-        curr_state = deepcopy(node.state)
+        curr_state = node.state
         while not curr_state.is_terminal() and self.depth > 0:
-            possible_moves = curr_state.get_moves()
-            if not possible_moves:
+            moves = curr_state.get_moves()
+            if not moves:
                 break
-            move = random.choice(list(possible_moves))
+            move = random.choice(list(moves))
             curr_state = curr_state.move(move)
             self.depth -= 1
         return curr_state.get_utility()
     
+    #Back propagate the number of visits and utility
     def back_prop(self, node, utility):
         while node:
             node.update_utility(utility)
