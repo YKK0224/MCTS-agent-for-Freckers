@@ -16,7 +16,7 @@ import random
 from collections import defaultdict
 from copy import deepcopy
 
-class Node:
+class TreeNode:
     def __init__(self, state, parent = None):
         self.state = state
         self.parent = parent                    #parent node
@@ -28,36 +28,33 @@ class Node:
     def select_child(self):
         C = math.sqrt(2)
         if self.state.board.turn_color == PlayerColor.RED:
-            current_player = 0                  #current player is red frog
+            curr_player = 0                  #current player is red frog
         else:
-            current_player = 1                  #current player is blue frog
+            curr_player = 1                  #current player is blue frog
             
-        # Function that calculates the upper confidence bound
-        def UCB(child) -> float:
-            #Prioritise the node that has not been visited yet
-            if child.num_visit == 0:
-                return float('inf')
-            
-            exploit = child.total_utility[current_player] / child.num_visit
-            explore = C * math.sqrt(math.log(self.num_visit) / child.num_visit)
-            return exploit + explore
-        
         #Select the child that has the highest UCB
         best = None
-        best_score = -float('inf')
+        best_UCB = -float('inf')
         for child in self.children:
-            score = UCB(child)
-            if score > best_score:
-                best_score = score
+            #Prioritise the node that has not been visited yet
+            if child.num_visit == 0:
+                UCB = float('inf')
+            else: 
+                exploit = child.total_utility[curr_player] / child.num_visit
+                explore = C * math.sqrt(math.log(self.num_visit) / child.num_visit)
+                UCB = exploit + explore
+                
+            if UCB > best_UCB:
+                best_UCB = UCB
                 best = child
-        return best  #可以修改，不使用max
+        return best 
     
     #Expand a new node
     def expand(self):
         #Find a leagal move and move to that node
         move = self.moves.pop()
         next_state = self.state.move(move)
-        child = Node(next_state, parent=self)
+        child = TreeNode(next_state, parent=self)
         self.children.append(child)
         return child
     
@@ -209,22 +206,8 @@ class GameState:
     def is_terminal(self):
         return self.board.game_over
     
-    #可修改
     #Find the utility of a current state
-    def get_utility(self):
-        #Use a heuristic to evaluate utility for non-terminal position
-        def heuristic():
-            #Count the number of frog on goal state, and divided by the number of frog to normalise the value
-            red_progress = self.board._row_count(PlayerColor.RED, BOARD_N - 1) / (BOARD_N - 2)
-            blue_progress = self.board._row_count(PlayerColor.BLUE, 0) / (BOARD_N - 2)
-            
-            score = red_progress - blue_progress
-            
-            #Invert the sign when blue, so higher is always better.
-            if self.board.turn_color == PlayerColor.BLUE:
-                score *= -1
-            return score
-            
+    def get_utility(self):       
         if self.is_terminal:
             #Find end game utility
             red_score = self.board._player_score(PlayerColor.RED)
@@ -243,15 +226,24 @@ class GameState:
                 elif blue_score < red_score:
                     return -1.0
                 else:
-                    return 0
-                
+                    return 0   
         else:
-            return heuristic()
+            #If the game is not terminated, calculate utility for non-terminal position
+            #Count the number of frog on goal state, and divided by the number of frog to normalise the value
+            red_progress = self.board._row_count(PlayerColor.RED, BOARD_N - 1) / (BOARD_N - 2)
+            blue_progress = self.board._row_count(PlayerColor.BLUE, 0) / (BOARD_N - 2)
+            
+            utility = red_progress - blue_progress
+            
+            #Invert the sign when blue, so higher is always better.
+            if self.board.turn_color == PlayerColor.BLUE:
+                utility *= -1
+            return utility
         
         
 class MCTS:
     def __init__(self, state):
-        self.root = Node(state)
+        self.root = TreeNode(state)
         self.depth = 30             #depth of simulation
         
     #A function that do the MCTS search
