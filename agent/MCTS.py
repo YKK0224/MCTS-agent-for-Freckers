@@ -26,20 +26,19 @@ class TreeNode:
         self.moves = state.get_moves()          #possible moves that have not tried
     
     def select_child(self):
-        C = math.sqrt(2)
-        if self.state.board.turn_color == PlayerColor.RED:
-            curr_player = 0                  #current player is red frog
-        else:
-            curr_player = 1                  #current player is blue frog
-            
         #Select the child that has the highest UCB
+        C = math.sqrt(2)     
         best = None
         best_UCB = -float('inf')
         for child in self.children:
             #Prioritise the node that has not been visited yet
             if child.num_visit == 0:
                 UCB = float('inf')
-            else: 
+            else:
+                if self.state.board.turn_color == PlayerColor.RED:
+                    curr_player = 0                  #current player is red frog
+                else:
+                    curr_player = 1                  #current player is blue frog
                 exploit = child.total_utility[curr_player] / child.num_visit
                 explore = C * math.sqrt(math.log(self.num_visit) / child.num_visit)
                 UCB = exploit + explore
@@ -52,7 +51,9 @@ class TreeNode:
     #Expand a new node
     def expand(self):
         #Find a leagal move and move to that node
+        #sorted_moves = sorted(self.moves, key=lambda m: (len(m.directions)if isinstance(m, MoveAction) else 0), reverse=True)
         move = self.moves.pop()
+        #move = sorted_moves[0]
         next_state = self.state.move(move)
         child = TreeNode(next_state, parent=self)
         self.children.append(child)
@@ -98,7 +99,6 @@ class GameState:
                 start_coord = move.coord
                 end_coord = move.coord
                 dirs = move.directions
-                
                 for d in dirs:
                     end_coord += d
                 #Determine the weight of move action by calculating vertical distance
@@ -244,11 +244,12 @@ class GameState:
 class MCTS:
     def __init__(self, state):
         self.root = TreeNode(state)
-        self.depth = 30             #depth of simulation
+        self.depth = 15             #depth of simulation
         
     #A function that do the MCTS search
-    def search(self, iteration):
-        for i in range(iteration):
+    def search(self, cycles):
+        #cycles represent the number of selection, simulation, back propogation performed
+        for i in range(cycles):
             #Select a child node to expand
             child = self.select()
             #Simulate and back propagate the utility to the tree
@@ -281,13 +282,14 @@ class MCTS:
     def simulate(self, node):
         #可修改
         curr_state = node.state
-        while not curr_state.is_terminal() and self.depth > 0:
+        depth_limit = self.depth            #Number of moves to go
+        while not curr_state.is_terminal() and depth_limit > 0:
             moves = curr_state.get_moves()
             if not moves:
                 break
             move = random.choice(list(moves))
             curr_state = curr_state.move(move)
-            self.depth -= 1
+            depth_limit -= 1
         return curr_state.get_utility()
     
     #Back propagate the number of visits and utility

@@ -40,7 +40,7 @@ class Agent:
         curr_state = GameState(last_move=None, board=self._board)
         
         mcts = MCTS(curr_state)
-        best = mcts.search(500)
+        best = mcts.search(50)
         return best
     
     def update(self, color: PlayerColor, action: Action, **referee: dict):
