@@ -93,14 +93,21 @@ class GameState:
         #Function that evaluates the weight of a move, and add to a dictionary
         #Dictionary is used to find the move with highest weight, and thus pruning the move that has low weight
         def evaluate(move):
+            #要修改逻辑，改成direction最长的优先？
             #The weight for grow action is 1
             weight = 1
             if isinstance(move, MoveAction):
                 start_coord = move.coord
                 end_coord = move.coord
-                dirs = move.directions
-                for d in dirs:
+                #dirs = move.directions
+                for d in move.directions:
                     end_coord += d
+                    #If current move is a jump move, jump to desired coordinate
+                    '''
+                    if(self.board[end_coord].state == PlayerColor.BLUE or 
+                            self.board[end_coord].state == PlayerColor.RED):
+                        end_coord += d
+                    '''
                 #Determine the weight of move action by calculating vertical distance
                 weight = abs(end_coord.r - start_coord.r)
                 
@@ -119,8 +126,9 @@ class GameState:
                     continue
         #Track all the visited coordinate for dfs
         visited = set()
+        
         #Implement jump moves
-        def chain_jump(curr_coord, dirs, path: list[Direction]):
+        def chain_jump(curr_coord, dirs, path):
             #Ignore the case that current coordinate does not have the desired frog
             if self.board[curr_coord].state != self.board.turn_color:
                 return
@@ -133,10 +141,12 @@ class GameState:
                 try:
                     #Find the middle coordinate and final coordinate
                     mid = curr_coord + d
-                    fin = mid + d
-                    
-                    if (self.board[mid].state == PlayerColor.BLUE or self.board[mid].state == PlayerColor.RED) and self.board[fin].state == "LilyPad":
-                        new_path = path + [d]
+                    #Ignore the case that jump comdition is not satisfied
+                    if self.board[mid].state != PlayerColor.BLUE and self.board[mid].state != PlayerColor.RED:
+                        continue
+                    fin = mid + d          
+                    if self.board[fin].state == "LilyPad":
+                        new_path = path + (d,)
                         #Using dfs to find chain jumps
                         if fin not in visited:
                             visited.add(fin)
@@ -145,8 +155,31 @@ class GameState:
                             
                 except ValueError:
                     continue 
-
-        #可改逻辑
+            
+        '''
+        def jump(start, curr, dirs, path):
+            if self.board[curr].state != self.board.turn_color:
+                return
+            if path:
+                move = MoveAction(curr, tuple(path.copy()))
+                evaluate(move)
+            for d in dirs:
+                try:
+                    mid = curr + d
+                    fin = mid + d
+                    if (
+                        self.board[mid].state in (PlayerColor.RED, PlayerColor.BLUE)
+                        and self.board[fin].state == "LilyPad"
+                        and fin not in visited
+                    ):
+                        visited.add(fin)
+                        jump(start, fin, dirs, path + (d,))
+                        visited.remove(fin)
+                except ValueError:
+                    pass
+        '''
+        
+        
         def grow(coord):
             #Checking surrounding positions to make sure that lily pad can be grown
             for d in all_dir:
@@ -172,7 +205,8 @@ class GameState:
             #For each red frog, evaluate three moves, and add the weight to dict     
             for coord in red_coords:
                 simple_move(coord, red_dir)
-                chain_jump(coord, red_dir, [])
+                chain_jump(coord, red_dir, ())
+                #jump(coord, coord, red_dir, ())
                 grow(coord)
         #Blue's turn
         elif self.board.turn_color == PlayerColor.BLUE:
@@ -184,13 +218,14 @@ class GameState:
                     
             for coord in blue_coords:
                 simple_move(coord, blue_dir)
-                chain_jump(coord, blue_dir, [])
+                chain_jump(coord, blue_dir, ())
+                #jump(coord, coord, blue_dir, ())
                 grow(coord)
-                
         if moves:
             best_move = moves[max(moves)]
         else:
             best_move = None
+  
         return best_move
     
     #Apply moves to update the board
