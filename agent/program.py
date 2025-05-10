@@ -6,6 +6,9 @@ from referee.game import PlayerColor, Coord, Direction, \
 from referee.game.exceptions import IllegalActionException
 from referee.game.board import Board
 from .MCTS import GameState, MCTS
+#from .MCTS2 import GameState, MCTS
+#from .MCTS3 import GameState, MCTS
+#from .MCTS4 import GameState, MCTS
 
 class Agent:
     """
@@ -31,16 +34,11 @@ class Agent:
         This method is called by the referee each time it is the agent's turn
         to take an action. It must always return an action object. 
         """
-        '''
-        if self._board is None:
-            #from referee.game.board import Board
-            self._board = Board()
-        '''
         
         curr_state = GameState(last_move=None, board=self._board)
         
         mcts = MCTS(curr_state)
-        best = mcts.search(50)
+        best = mcts.search(100)
         return best
     
     def update(self, color: PlayerColor, action: Action, **referee: dict):
@@ -48,10 +46,6 @@ class Agent:
         This method is called by the referee after a player has taken their
         turn. You should use it to update the agent's internal game state. 
         """
-        '''
-        if self._board is None:
-            self._board = Board()
-        '''
         try:
             self._board.apply_action(action)
         except IllegalActionException:

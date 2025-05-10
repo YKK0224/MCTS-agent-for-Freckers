@@ -4,11 +4,11 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 import math
-from typing import List
+from typing import List, Optional, Tuple
 from referee.game.player import PlayerColor
 from referee.game import board
 from referee.game.board import Board
-from referee.game.coord import Direction
+from referee.game.coord import Direction, Coord
 from referee.game.actions import MoveAction, GrowAction, Action
 from referee.game.exceptions import IllegalActionException
 from referee.game.constants import *
@@ -73,7 +73,7 @@ class GameState:
     def __init__(self, last_move, board):
         self.last_move = last_move
         self.board = board
-
+    '''
     #Find all the possible moves of a current frog
     def get_moves(self):
         #Directions allowed for red frog
@@ -103,11 +103,6 @@ class GameState:
                 for d in move.directions:
                     end_coord += d
                     #If current move is a jump move, jump to desired coordinate
-                    '''
-                    if(self.board[end_coord].state == PlayerColor.BLUE or 
-                            self.board[end_coord].state == PlayerColor.RED):
-                        end_coord += d
-                    '''
                 #Determine the weight of move action by calculating vertical distance
                 weight = abs(end_coord.r - start_coord.r)
                 
@@ -155,31 +150,7 @@ class GameState:
                             
                 except ValueError:
                     continue 
-            
-        '''
-        def jump(start, curr, dirs, path):
-            if self.board[curr].state != self.board.turn_color:
-                return
-            if path:
-                move = MoveAction(curr, tuple(path.copy()))
-                evaluate(move)
-            for d in dirs:
-                try:
-                    mid = curr + d
-                    fin = mid + d
-                    if (
-                        self.board[mid].state in (PlayerColor.RED, PlayerColor.BLUE)
-                        and self.board[fin].state == "LilyPad"
-                        and fin not in visited
-                    ):
-                        visited.add(fin)
-                        jump(start, fin, dirs, path + (d,))
-                        visited.remove(fin)
-                except ValueError:
-                    pass
-        '''
-        
-        
+                
         def grow(coord):
             #Checking surrounding positions to make sure that lily pad can be grown
             for d in all_dir:
@@ -227,6 +198,79 @@ class GameState:
             best_move = None
   
         return best_move
+    '''
+    def get_moves(self) -> List[Action]:
+        """
+        Generate all legal MoveAction and GrowAction for current player.
+        Returns a list sorted by heuristic weight (longer forward moves first).
+        """
+        moves: List[Action] = []
+        weights: List[Tuple[int, Action]] = []
+        player = self.board.turn_color
+        goal_row = 0 if player == PlayerColor.BLUE else BOARD_N - 1
+
+        # Directions for movement and jump
+        if player == PlayerColor.RED:
+            dirs = [Direction.Down, Direction.DownLeft, Direction.DownRight, Direction.Left, Direction.Right]
+        else:
+            dirs = [Direction.Up, Direction.UpLeft, Direction.UpRight, Direction.Left, Direction.Right]
+
+        # All neighbors for grow
+        grow_dirs = list(Direction)
+
+        # Simple moves and jumps
+        for coord, cell in self.board._state.items():
+            if cell.state == player and coord.r != goal_row:
+                # Simple one-step moves
+                for d in dirs:
+                    try:
+                        nxt = coord + d
+                        if self.board[nxt].state == "LilyPad":
+                            move = MoveAction(coord, (d,))
+                            weight = abs(nxt.r - coord.r)
+                            weights.append((weight, move))
+                    except (ValueError, KeyError):
+                        continue
+                # Chain jumps via DFS
+                def dfs(c: Coord, path: Tuple[Direction, ...], visited: set):
+                    for d in dirs:
+                        try:
+                            mid = c + d
+                            dest = mid + d
+                            if (self.board[mid].state in (PlayerColor.RED, PlayerColor.BLUE)) and self.board[dest].state == "LilyPad" and dest not in visited:
+                                new_path = path + (d,)
+                                move = MoveAction(coord, new_path)
+                                weight = len(new_path)
+                                weights.append((weight, move))
+                                visited.add(dest)
+                                dfs(dest, new_path, visited)
+                                visited.remove(dest)
+                        except (ValueError, KeyError):
+                            continue
+                dfs(coord, (), set())
+
+        # Grow action
+        can_grow = False
+        for coord, cell in self.board._state.items():
+            if cell.state == player:
+                for d in grow_dirs:
+                    try:
+                        tgt = coord + d
+                        if self.board[tgt].state is None:
+                            can_grow = True
+                            break
+                    except (ValueError, KeyError):
+                        continue
+                if can_grow:
+                    break
+        if can_grow:
+            weights.append((1, GrowAction()))
+
+        # Sort by descending weight
+        weights.sort(key=lambda x: x[0], reverse=True)
+        moves = [m for _, m in weights]
+        return moves
+
     
     #Apply moves to update the board
     def move(self, action):
