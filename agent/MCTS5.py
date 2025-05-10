@@ -13,7 +13,7 @@ from referee.game.exceptions import IllegalActionException
 from referee.game.constants import BOARD_N
 
 # MCTS simulation parameters
-SIM_DEPTH = 30
+SIM_DEPTH = 15
 EXPLORATION_CONST = math.sqrt(2)
 
 # Map delta to Direction
@@ -39,60 +39,64 @@ class GameState:
     def get_moves(self) -> List[Action]:
         player = self.board.turn_color
         sign = 1 if player == PlayerColor.RED else -1
-        offsets = [(1, 0), (1, -1), (1, 1)]
-        forward_dirs = [DELTA_TO_DIR[(dr*sign, dc*sign)] for dr,dc in offsets]
+        forward_only = [(1, 0), (1, -1), (1, 1)]
+        lateral = [(0, 1), (0, -1)]
+        all_offsets  = forward_only + lateral
+        #forward_dirs = [DELTA_TO_DIR[(dr*sign, dc*sign)] for dr,dc in offsets]
+        forward_dirs = [ DELTA_TO_DIR[(dr*sign, dc*sign)] if dr!=0
+             else DELTA_TO_DIR[(0, dc)]        # lateral unaffected by sign
+             for dr,dc in all_offsets ]
 
         weights: List[Tuple[int, Action]] = []
-        goal_row = BOARD_N-1 if player==PlayerColor.RED else 0
+        goal_row = BOARD_N - 1 if player == PlayerColor.RED else 0
+        
+        has_move = False
+        has_jump = False
+        has_empty = False
 
-        # if no forward pads but empty forward => grow
-        has_pad = has_empty = False
         for coord, cell in self.board._state.items():
-            if cell.state==player:
-                for d in forward_dirs:
-                    try:
-                        s = self.board[coord+d].state
-                        if s=='LilyPad': has_pad=True
-                        elif s is None: has_empty=True
-                    except ValueError:
-                        pass
-        if not has_pad and has_empty:
-            return [GrowAction()]
-
-        # generate moves
-        for coord, cell in self.board._state.items():
-            if cell.state!=player or coord.r==goal_row:
+            if cell.state != player or coord.r == goal_row:
                 continue
-            # one-step
+           # One-step forward moves
             for d in forward_dirs:
                 try:
                     tgt = coord + d
-                    if self.board[tgt].state=='LilyPad':
-                        w = abs(tgt.r - coord.r)
-                        weights.append((w, MoveAction(coord, (d,))))
+                    s = self.board[tgt].state
+                    if s == 'LilyPad':
+                        has_move = True
+                        weight = 100 if tgt.r == goal_row else abs(tgt.r - coord.r)
+                        weights.append((weight, MoveAction(coord, (d,))))
+                    elif s not in (PlayerColor.RED, PlayerColor.BLUE) and s != 'LilyPad':
+                        has_empty = True
                 except ValueError:
                     pass
-            # jumps via DFS
-            def dfs(src:Coord, path:Tuple[Direction,...], visited:set):
+
+            # Chain jumps
+            def dfs(src: Coord, path: Tuple[Direction, ...], visited: set):
+                nonlocal has_jump
                 for d in forward_dirs:
                     try:
-                        mid = src + d; tgt = mid + d
-                        if (self.board[mid].state in (PlayerColor.RED,PlayerColor.BLUE)) and self.board[tgt].state=='LilyPad' and tgt not in visited:
-                            new_path = path+(d,)
-                            weights.append((len(new_path), MoveAction(coord,new_path)))
+                        mid = src + d
+                        tgt = mid + d
+                        if (self.board[mid].state in (PlayerColor.RED, PlayerColor.BLUE)
+                            and self.board[tgt].state == 'LilyPad' and tgt not in visited):
+                            new_path = path + (d,)
+                            weight = 100 if tgt.r == goal_row else len(new_path)
+                            weights.append((weight, MoveAction(coord, new_path)))
                             visited.add(tgt)
-                            dfs(tgt,new_path,visited)
+                            has_jump = True
+                            dfs(tgt, new_path, visited)
                             visited.remove(tgt)
                     except ValueError:
                         pass
             dfs(coord, (), set())
 
-        # optional grow
-        if has_empty:
+        # Only add Grow if no move or jump available
+        if not has_move and not has_jump and has_empty:
             weights.append((1, GrowAction()))
 
         weights.sort(key=lambda x: x[0], reverse=True)
-        return [a for _,a in weights]
+        return [a for _, a in weights]
 
     def move(self, action: Action) -> 'GameState':
         new_board = deepcopy(self.board)
@@ -104,7 +108,7 @@ class GameState:
 
     def is_terminal(self) -> bool:
         return self.board.game_over
-
+    '''
     def get_utility(self) -> float:
         if self.is_terminal():
             r=self.board._player_score(PlayerColor.RED)
@@ -116,6 +120,39 @@ class GameState:
         blue_prog=self.board._row_count(PlayerColor.BLUE,0)/(BOARD_N-2)
         diff = red_prog-blue_prog
         return diff if self.board.turn_color==PlayerColor.RED else -diff
+    '''
+    def get_utility(self) -> float:       
+        if self.is_terminal:
+            #Find end game utility
+            red_score = self.board._player_score(PlayerColor.RED)
+            blue_score = self.board._player_score(PlayerColor.BLUE)
+            
+            if self.board.turn_color == PlayerColor.RED:
+                if red_score > blue_score:
+                    return 1.0
+                elif red_score < blue_score:
+                    return -1.0
+                else:
+                    return 0
+            elif self.board.turn_color == PlayerColor.BLUE:
+                if blue_score > red_score:
+                    return 1.0
+                elif blue_score < red_score:
+                    return -1.0
+                else:
+                    return 0   
+        else:
+            #If the game is not terminated, calculate utility for non-terminal position
+            #Count the number of frog on goal state, and divided by the number of frog to normalise the value
+            red_progress = self.board._row_count(PlayerColor.RED, BOARD_N - 1) / (BOARD_N - 2)
+            blue_progress = self.board._row_count(PlayerColor.BLUE, 0) / (BOARD_N - 2)
+            
+            utility = red_progress - blue_progress
+            
+            #Invert the sign when blue, so higher is always better.
+            if self.board.turn_color == PlayerColor.BLUE:
+                utility *= -1
+            return utility
 
 class Node:
     """
@@ -124,12 +161,17 @@ class Node:
     def __init__(self,state:GameState,parent:Optional['Node']=None):
         self.state=state; self.parent=parent
         self.children:List['Node']=[]
-        self.visits=0; self.value=0.0
+        self.visits=0 
+        self.value=[0.0, 0.0]
         self.untried_moves=state.get_moves()
 
     def ucb1(self)->float:
+        if self.state.board.turn_color == PlayerColor.RED:
+            curr_player = 0
+        else:
+            curr_player = 1
         if self.visits==0: return float('inf')
-        return (self.value/self.visits) + EXPLORATION_CONST*math.sqrt(math.log(self.parent.visits)/self.visits)
+        return (self.value[curr_player]/self.visits) + EXPLORATION_CONST*math.sqrt(math.log(self.parent.visits)/self.visits)
 
     def select(self)->'Node':
         return max(self.children, key=lambda c:c.ucb1())
@@ -142,7 +184,14 @@ class Node:
         return child
 
     def update(self,reward:float):
-        self.visits+=1; self.value+=reward
+        self.visits+=1
+        #self.value+=reward
+        if self.state.board.turn_color == PlayerColor.RED:
+            self.value[0] += reward
+            self.value[1] -= reward
+        else:
+            self.value[1] += reward
+            self.value[0] -= reward
 
 class MCTS:
     """
@@ -151,11 +200,14 @@ class MCTS:
     def __init__(self,root_state:GameState):
         self.root=Node(root_state)
 
-    def search(self, iteration: Optional[int] = None, iterations: int = 50, time_limit: Optional[float] = None) -> Optional[Action]:
-        start=time.time(); total=iterations
+    def search(self, iterations, time_limit: Optional[float] = None) -> Optional[Action]:
+        start=time.time()
+        total=iterations
         for _ in range(total):
             if time_limit and (time.time()-start)>time_limit: break
-            node=self._select(); reward=self._simulate(node); self._backpropagate(node,reward)
+            node=self._select() 
+            reward=self._simulate(node) 
+            self._backpropagate(node,reward)
         if not self.root.children:
             # Fallback if no simulations generated any children
             moves = self.root.state.get_moves()
@@ -188,7 +240,8 @@ class MCTS:
 
     def _backpropagate(self,node:Node,reward:float):
         while node:
-            node.update(reward); node=node.parent
+            node.update(reward)
+            node=node.parent
 
     def reroot(self,new_state:GameState):
         for child in self.root.children:
