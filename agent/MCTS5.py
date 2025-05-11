@@ -39,41 +39,37 @@ class GameState:
     def get_moves(self) -> List[Action]:
         player = self.board.turn_color
         sign = 1 if player == PlayerColor.RED else -1
-        forward_only = [(1, 0), (1, -1), (1, 1)]
-        lateral = [(0, 1), (0, -1)]
-        all_offsets  = forward_only + lateral
-        #forward_dirs = [DELTA_TO_DIR[(dr*sign, dc*sign)] for dr,dc in offsets]
-        forward_dirs = [ DELTA_TO_DIR[(dr*sign, dc*sign)] if dr!=0
-             else DELTA_TO_DIR[(0, dc)]        # lateral unaffected by sign
-             for dr,dc in all_offsets ]
+        forward_offsets = [(1, 0), (1, -1), (1, 1)]
+        forward_dirs    = [DELTA_TO_DIR[(dr*sign, dc*sign)] for dr,dc in forward_offsets]
+        lateral_offsets = [(0, 1), (0, -1)]
+        lateral_dirs    = [DELTA_TO_DIR[off] for off in lateral_offsets]
 
         weights: List[Tuple[int, Action]] = []
         goal_row = BOARD_N - 1 if player == PlayerColor.RED else 0
+        has_empty_global = False
         
-        has_move = False
-        has_jump = False
-        has_empty = False
-
         for coord, cell in self.board._state.items():
             if cell.state != player or coord.r == goal_row:
                 continue
            # One-step forward moves
+            local_forward = False
             for d in forward_dirs:
                 try:
                     tgt = coord + d
                     s = self.board[tgt].state
                     if s == 'LilyPad':
-                        has_move = True
+                        local_forward = True
                         weight = 100 if tgt.r == goal_row else abs(tgt.r - coord.r)
                         weights.append((weight, MoveAction(coord, (d,))))
-                    elif s not in (PlayerColor.RED, PlayerColor.BLUE) and s != 'LilyPad':
-                        has_empty = True
+                    elif s is None:
+                        has_empty_global = True
                 except ValueError:
                     pass
 
             # Chain jumps
+            local_jump = False
             def dfs(src: Coord, path: Tuple[Direction, ...], visited: set):
-                nonlocal has_jump
+                nonlocal local_jump
                 for d in forward_dirs:
                     try:
                         mid = src + d
@@ -81,19 +77,34 @@ class GameState:
                         if (self.board[mid].state in (PlayerColor.RED, PlayerColor.BLUE)
                             and self.board[tgt].state == 'LilyPad' and tgt not in visited):
                             new_path = path + (d,)
-                            weight = 100 if tgt.r == goal_row else len(new_path)
-                            weights.append((weight, MoveAction(coord, new_path)))
+                            w = 100 if tgt.r == goal_row else len(new_path)
+                            weights.append((w, MoveAction(coord, new_path)))
                             visited.add(tgt)
-                            has_jump = True
+                            local_jump = True
                             dfs(tgt, new_path, visited)
                             visited.remove(tgt)
                     except ValueError:
                         pass
             dfs(coord, (), set())
 
-        # Only add Grow if no move or jump available
-        if not has_move and not has_jump and has_empty:
-            weights.append((1, GrowAction()))
+            # Only add Grow if no move or jump available
+            if not local_forward and not local_jump:
+                allow_lateral = (
+                    (player == PlayerColor.BLUE and coord.r <= 2)
+                    or (player == PlayerColor.RED and coord.r >= BOARD_N - 3))
+                if allow_lateral:
+                    for d in lateral_dirs:
+                        try:
+                            tgt = coord + d
+                            if self.board[tgt].state == "LilyPad":
+                                w = abs(tgt.c - coord.c)  # lateral weight = 1
+                                weights.append((w, MoveAction(coord, (d,))))
+                            elif self.board[tgt].state is None:
+                                has_empty_global = True
+                        except ValueError:
+                            pass
+        if has_empty_global:
+            weights.append((0.5, GrowAction()))
 
         weights.sort(key=lambda x: x[0], reverse=True)
         return [a for _, a in weights]
@@ -108,19 +119,7 @@ class GameState:
 
     def is_terminal(self) -> bool:
         return self.board.game_over
-    '''
-    def get_utility(self) -> float:
-        if self.is_terminal():
-            r=self.board._player_score(PlayerColor.RED)
-            b=self.board._player_score(PlayerColor.BLUE)
-            if r>b: return 1.0
-            if b>r: return -1.0
-            return 0.0
-        red_prog=self.board._row_count(PlayerColor.RED,BOARD_N-1)/(BOARD_N-2)
-        blue_prog=self.board._row_count(PlayerColor.BLUE,0)/(BOARD_N-2)
-        diff = red_prog-blue_prog
-        return diff if self.board.turn_color==PlayerColor.RED else -diff
-    '''
+
     def get_utility(self) -> float:       
         if self.is_terminal:
             #Find end game utility

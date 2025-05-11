@@ -48,7 +48,7 @@ class Agent:
             self.mcts.reroot(self.current_state)
 
         # Run MCTS with a fixed iteration budget (200 rollouts)
-        best_move = self.mcts.search(200, time_limit=180)
+        best_move = self.mcts.search(300, time_limit=180)
         return best_move
     
     def update(self, color: PlayerColor, action: Action, **referee: dict):
